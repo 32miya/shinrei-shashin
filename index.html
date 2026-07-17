@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>心霊写真ハンター</title>
+<style>
+  :root{
+    --bg:#07070a;
+    --panel:#111116;
+    --accent:#8b1a1a;
+    --accent2:#c73e3e;
+    --text:#e8e4df;
+    --dim:#8a8a92;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+    overflow:hidden; overscroll-behavior:none;
+  }
+  #app{
+    position:fixed; inset:0; display:flex; flex-direction:column;
+  }
+
+  /* ---------- 共通 ---------- */
+  .screen{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; padding:24px;
+    text-align:center; transition:opacity .4s ease;
+  }
+  .hidden{ display:none !important; }
+  h1.title{
+    font-size:8vw; max-font-size:40px; letter-spacing:.08em; margin:0 0 12px;
+    color:var(--accent2);
+    text-shadow:0 0 12px rgba(199,62,62,.55), 0 0 2px #000;
+    animation:flicker 3.4s infinite;
+  }
+  @keyframes flicker{
+    0%,19%,21%,23%,25%,54%,56%,100%{opacity:1;}
+    20%,24%,55%{opacity:.55;}
+  }
+  p.desc{ color:var(--dim); line-height:1.8; font-size:14px; max-width:340px; margin:6px 0 26px; }
+  button{
+    font-family:inherit; font-size:16px; letter-spacing:.05em;
+    padding:14px 34px; border-radius:30px; border:1px solid var(--accent);
+    background:linear-gradient(180deg,#2a0d0d,#150707); color:var(--text);
+    cursor:pointer; box-shadow:0 0 20px rgba(139,26,26,.35);
+  }
+  button:active{ transform:scale(.96); }
+  button.sub{
+    margin-top:14px; background:transparent; border:1px solid #333; color:var(--dim);
+    font-size:13px; padding:8px 18px;
+  }
+
+  /* ---------- ゲーム画面 ---------- */
+  #gameScreen{ justify-content:flex-start; padding:0; }
+  #hud{
+    width:100%; padding:10px 14px 8px; display:flex; align-items:center;
+    justify-content:space-between; font-size:13px; color:var(--dim);
+    background:linear-gradient(180deg,#000,transparent);
+    position:relative; z-index:5;
+  }
+  #hud .pill{
+    background:var(--panel); border:1px solid #26262c; border-radius:20px;
+    padding:5px 12px; display:flex; align-items:center; gap:6px; color:var(--text);
+  }
+  #hud .gearBtn{
+    background:transparent; border:none; color:#444; font-size:16px; padding:4px 8px;
+  }
+  #stageWrap{
+    flex:1; width:100%; display:flex; align-items:center; justify-content:center;
+    position:relative;
+  }
+  #stage{
+    position:relative; touch-action:none; box-shadow:0 10px 40px rgba(0,0,0,.7);
+    background:#000; overflow:hidden;
+  }
+  #zoomLayer{
+    position:absolute; inset:0; width:100%; height:100%;
+    transform-origin:0 0; will-change:transform;
+  }
+  #stage img.cleanLayer{
+    position:absolute; inset:0; width:100%; height:100%; object-fit:fill;
+    pointer-events:none; user-select:none; -webkit-user-drag:none;
+  }
+  #stage canvas{
+    position:absolute; inset:0; width:100%; height:100%; display:block;
+  }
+  #fxCanvas{
+    pointer-events:none;
+  }
+  #zoomResetBtn{
+    position:absolute; top:8px; right:8px; z-index:9;
+    padding:6px 12px; font-size:12px; border-radius:20px;
+    background:rgba(0,0,0,.6); border:1px solid #444; color:#ddd;
+    opacity:0; pointer-events:none; transition:opacity .2s ease;
+    box-shadow:none;
+  }
+  #zoomResetBtn.show{ opacity:1; pointer-events:auto; }
+  #photoCaption{
+    position:absolute; left:0; right:0; bottom:0; padding:8px 14px 10px;
+    background:linear-gradient(0deg,rgba(0,0,0,.65),transparent);
+    font-size:12px; color:var(--dim); letter-spacing:.05em; pointer-events:none;
+  }
+  #toast{
+    position:absolute; top:14%; left:50%; transform:translate(-50%,-10px);
+    background:rgba(139,26,26,.9); color:#fff; padding:8px 18px; border-radius:20px;
+    font-size:14px; letter-spacing:.08em; opacity:0; pointer-events:none;
+    transition:opacity .25s ease, transform .25s ease; z-index:10; white-space:nowrap;
+  }
+  #toast.show{ opacity:1; transform:translate(-50%,0); }
+  #toast.warn{ background:rgba(50,50,55,.95); border:1px solid #666; }
+
+  #clearOverlay{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; background:rgba(0,0,0,.55); opacity:0; pointer-events:none;
+    transition:opacity .5s ease; z-index:8;
+  }
+  #clearOverlay.show{ opacity:1; pointer-events:auto; }
+  #clearOverlay .clearText{
+    font-size:28px; color:#fff; text-shadow:0 0 16px var(--accent2); letter-spacing:.1em;
+    margin-bottom:16px;
+  }
+
+  #debugPanel{
+    position:absolute; left:8px; bottom:8px; right:8px; max-height:30%; overflow:auto;
+    background:rgba(0,0,0,.75); border:1px solid #444; border-radius:8px; padding:8px;
+    font-size:11px; color:#9f9; z-index:20; text-align:left; display:none;
+  }
+  #debugPanel.show{ display:block; }
+  #debugPanel div{ padding:2px 0; border-bottom:1px dashed #333; }
+
+  /* ---------- 結果画面 ---------- */
+  #resultStats{
+    background:var(--panel); border:1px solid #26262c; border-radius:14px;
+    padding:20px 26px; margin-bottom:22px; min-width:220px;
+  }
+  #resultStats .row{ display:flex; justify-content:space-between; font-size:14px; padding:6px 0; color:var(--dim); }
+  #resultStats .row b{ color:var(--text); font-size:16px; }
+  #resultRank{ font-size:22px; color:var(--accent2); margin-bottom:4px; letter-spacing:.06em; }
+
+  /* ---------- ギャラリー画面 ---------- */
+  #galleryScreen{ justify-content:flex-start; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+  #galleryGrid{ width:100%; max-width:420px; display:flex; flex-direction:column; gap:18px; margin:0 auto; }
+  .galleryCard{ width:100%; }
+  .galleryImgWrap{
+    position:relative; width:100%; line-height:0; border-radius:10px;
+    overflow:hidden; box-shadow:0 6px 20px rgba(0,0,0,.6); background:#000;
+  }
+  .galleryImgWrap img{ width:100%; display:block; }
+  .galleryFrame{
+    position:absolute; border:2px solid #ff3b3b; border-radius:6px;
+    box-shadow:0 0 8px rgba(255,50,50,.85), inset 0 0 8px rgba(255,50,50,.35);
+    pointer-events:none;
+  }
+  .galleryCap{ margin-top:8px; font-size:13px; color:var(--dim); text-align:left; padding:0 2px; }
+  .galleryCap b{ color:var(--text); }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- タイトル画面 -->
+  <div id="titleScreen" class="screen">
+    <h1 class="title">心霊写真ハンター</h1>
+    <p class="desc">
+      1枚の写真の裏には、まったく同じ場所を写したもう1枚の写真が隠れている。<br>
+      画面の中に潜む幽霊の気配を、指先でなぞって探し出そう。<br>
+      正しい場所に触れると、その部分だけが除霊され、幽霊のいない写真が透けて現れる。
+    </p>
+    <button id="startBtn">写真をめくる</button>
+    <button id="howToBtn" class="sub">遊び方</button>
+  </div>
+
+  <!-- 遊び方 -->
+  <div id="howToScreen" class="screen hidden">
+    <h1 class="title" style="font-size:28px;">遊び方</h1>
+    <p class="desc" style="text-align:left; max-width:320px;">
+      ① 写真の中を指でなぞって探索する。<br><br>
+      ② 幽霊が潜んでいる場所に触れると、その一帯だけが除霊されて透明になり、幽霊のいない写真が覗く。<br><br>
+      ③ 1枚の写真に幽霊は1体とは限らない。すべて除霊すると次の写真へ。<br><br>
+      ④ 指2本でピンチすると写真を拡大・縮小できる。怪しい場所はズームしてじっくり観察しよう。<br><br>
+      ⑤ 画面をやみくもに何度もなぞり続けると集中が途切れ、ペナルティが発生する。落ち着いて怪しい場所を狙おう。<br><br>
+      ⑥ 全7枚を制覇すると、除霊した写真を振り返れるギャラリーが見られる。
+    </p>
+    <button id="backFromHowTo">もどる</button>
+  </div>
+
+  <!-- ゲーム画面 -->
+  <div id="gameScreen" class="screen hidden">
+    <div id="hud">
+      <div class="pill">写真 <span id="photoIndex">1</span>/<span id="photoTotal">7</span></div>
+      <div class="pill">👻 <span id="spotFound">0</span>/<span id="spotTotal">0</span></div>
+      <div class="pill">合計 <span id="totalFound">0</span></div>
+      <button class="gearBtn" id="debugToggle">⚙</button>
+    </div>
+    <div id="stageWrap">
+      <div id="stage">
+        <div id="zoomLayer">
+          <img id="cleanImg" class="cleanLayer" alt="">
+          <canvas id="ghostCanvas"></canvas>
+          <canvas id="fxCanvas"></canvas>
+        </div>
+        <button id="zoomResetBtn">🔍⟲ リセット</button>
+        <div id="photoCaption"></div>
+        <div id="toast"></div>
+        <div id="clearOverlay">
+          <div class="clearText">除霊完了</div>
+          <button id="nextBtn">次の写真へ</button>
+        </div>
+        <div id="debugPanel"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 結果画面 -->
+  <div id="resultScreen" class="screen hidden">
+    <div id="resultRank">調査完了</div>
+    <h1 class="title" style="font-size:26px;">除霊レポート</h1>
+    <div id="resultStats">
+      <div class="row"><span>発見した霊</span><b id="resFound">0</b></div>
+      <div class="row"><span>写真の枚数</span><b id="resPhotos">7</b></div>
+      <div class="row"><span>所要時間</span><b id="resTime">0秒</b></div>
+      <div class="row"><span>なぞり過ぎペナルティ</span><b id="resPenalty">0回</b></div>
+    </div>
+    <button id="galleryBtn">特典ギャラリーを見る</button>
+    <button id="retryBtn" class="sub">もう一度挑む</button>
+  </div>
+
+  <!-- ギャラリー画面 -->
+  <div id="galleryScreen" class="screen hidden">
+    <h1 class="title" style="font-size:22px; margin-bottom:4px;">除霊済み写真ギャラリー</h1>
+    <p class="desc" style="margin-bottom:18px;">見つけた霊の場所が赤枠で表示されます</p>
+    <div id="galleryGrid"></div>
+    <button id="galleryBackBtn" class="sub" style="margin-top:24px; margin-bottom:20px;">もどる</button>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* =========================================================
+     データ定義
+     spots の x, y は画像に対する割合(0〜1)、r は画像の短辺に対する割合。
+     位置がずれている場合は ⚙ ボタンのデバッグモードで
+     写真をタップすると座標が表示されるので、ここを調整すること。
+  ========================================================= */
+  const PHOTOS = [
+    {
+      ghost:'assets/g1_ghost.jpg', clean:'assets/g1_clean.jpg',
+      caption:'夜の車内',
+      spots:[
+        {x:0.135, y:0.490, r:0.090}, // 左の窓に浮かぶ顔
+        {x:0.930, y:0.500, r:0.100}  // 右の窓に映る人影
+      ]
+    },
+    {
+      ghost:'assets/g2_ghost.jpg', clean:'assets/g2_clean.jpg',
+      caption:'森の小道',
+      spots:[
+        {x:0.780, y:0.330, r:0.090} // 右手の茂みに浮かぶ顔
+      ]
+    },
+    {
+      ghost:'assets/g3_ghost.jpg', clean:'assets/g3_clean.jpg',
+      caption:'夜の石段',
+      spots:[
+        {x:0.151, y:0.345, r:0.045}, // 左手前の人魂
+        {x:0.332, y:0.586, r:0.050}, // 左手奥の人魂
+        {x:0.500, y:0.685, r:0.060}  // 石畳の手形
+      ]
+    },
+    {
+      ghost:'assets/g4_ghost.jpg', clean:'assets/g4_clean.jpg',
+      caption:'廃屋',
+      spots:[
+        {x:0.186, y:0.562, r:0.075}, // 軒下に立つ人影
+        {x:0.293, y:0.530, r:0.075}, // 隣に浮かぶ顔
+        {x:0.461, y:0.487, r:0.050}, // 窓ガラスの手形
+        {x:0.761, y:0.487, r:0.035}, // 割れ窓の顔1
+        {x:0.829, y:0.487, r:0.035}, // 割れ窓の顔2
+        {x:0.921, y:0.487, r:0.035}  // 割れ窓の顔3
+      ]
+    },
+    {
+      ghost:'assets/g5_ghost.jpg', clean:'assets/g5_clean.jpg',
+      caption:'荒れた部屋',
+      spots:[
+        {x:0.450, y:0.420, r:0.350} // 部屋全体を覆う靄
+      ]
+    },
+    {
+      ghost:'assets/g6_ghost.jpg', clean:'assets/g6_clean.jpg',
+      caption:'寝室',
+      spots:[
+        {x:0.129, y:0.477, r:0.090}, // 左の襖の陰に立つ人影
+        {x:0.468, y:0.079, r:0.040}, // 天井近くの手の影
+        {x:0.525, y:0.233, r:0.045}, // 絵画に浮かぶ顔
+        {x:0.786, y:0.365, r:0.060}, // 右の鏡に映る叫ぶ顔
+        {x:0.961, y:0.392, r:0.060}  // 右端から覗く顔
+      ]
+    },
+    {
+      ghost:'assets/g7_ghost.jpg', clean:'assets/g7_clean.jpg',
+      caption:'ホテルの一室',
+      spots:[
+        {x:0.139, y:0.402, r:0.060}, // 左の壁に浮かぶ横顔
+        {x:0.221, y:0.487, r:0.060}, // ハンガーラック脇の足
+        {x:0.414, y:0.058, r:0.045}  // 天井の手の影
+      ]
+    }
+  ];
+
+  /* =========================================================
+     要素取得
+  ========================================================= */
+  const $ = id => document.getElementById(id);
+  const titleScreen = $('titleScreen');
+  const howToScreen = $('howToScreen');
+  const gameScreen  = $('gameScreen');
+  const resultScreen = $('resultScreen');
+  const galleryScreen = $('galleryScreen');
+
+  const stage = $('stage');
+  const stageWrap = $('stageWrap');
+  const zoomLayer = $('zoomLayer');
+  const zoomResetBtn = $('zoomResetBtn');
+  const cleanImg = $('cleanImg');
+  const ghostCanvas = $('ghostCanvas');
+  const fxCanvas = $('fxCanvas');
+  const gctx = ghostCanvas.getContext('2d');
+  const fctx = fxCanvas.getContext('2d');
+  const photoCaption = $('photoCaption');
+  const toast = $('toast');
+  const clearOverlay = $('clearOverlay');
+  const debugPanel = $('debugPanel');
+  const galleryGrid = $('galleryGrid');
+
+  const photoIndexEl = $('photoIndex');
+  const photoTotalEl = $('photoTotal');
+  const spotFoundEl = $('spotFound');
+  const spotTotalEl = $('spotTotal');
+  const totalFoundEl = $('totalFound');
+
+  photoTotalEl.textContent = PHOTOS.length;
+
+  /* =========================================================
+     状態
+  ========================================================= */
+  let curIndex = 0;
+  let totalFound = 0;
+  let totalSpots = PHOTOS.reduce((a,p)=>a+p.spots.length,0);
+  let ghostImgEl = new Image();
+  let stageW = 0, stageH = 0, dpr = Math.min(window.devicePixelRatio||1, 2);
+  let debugMode = false;
+  let trail = []; // {x,y,t} in CSS px, for finger fx
+  let startTime = 0;
+
+  // ズーム/パン
+  let zoom = 1, panX = 0, panY = 0;
+  const ZOOM_MIN = 1, ZOOM_MAX = 3.5;
+
+  // なぞり過ぎペナルティ
+  const STROKE_LIMIT_FACTOR = 1.6; // 画像対角線の何倍まで、1ストローク無休憩でなぞって良いか
+  let strokeLimit = 9999;
+  let penaltyCount = 0;
+  let penaltySeconds = 0;
+  const PENALTY_SECONDS_EACH = 3;
+
+  /* =========================================================
+     画面遷移
+  ========================================================= */
+  function showScreen(el){
+    [titleScreen,howToScreen,gameScreen,resultScreen,galleryScreen].forEach(s=>s.classList.add('hidden'));
+    el.classList.remove('hidden');
+  }
+
+  $('startBtn').addEventListener('click', ()=>{
+    curIndex = 0; totalFound = 0; startTime = Date.now();
+    penaltyCount = 0; penaltySeconds = 0;
+    totalFoundEl.textContent = totalFound;
+    showScreen(gameScreen);
+    loadPhoto(curIndex);
+  });
+  $('howToBtn').addEventListener('click', ()=> showScreen(howToScreen));
+  $('backFromHowTo').addEventListener('click', ()=> showScreen(titleScreen));
+  $('retryBtn').addEventListener('click', ()=> showScreen(titleScreen));
+  $('nextBtn').addEventListener('click', ()=>{
+    clearOverlay.classList.remove('show');
+    curIndex++;
+    if(curIndex >= PHOTOS.length){
+      finishGame();
+    } else {
+      loadPhoto(curIndex);
+    }
+  });
+  $('debugToggle').addEventListener('click', ()=>{
+    debugMode = !debugMode;
+    debugPanel.classList.toggle('show', debugMode);
+    debugPanel.innerHTML = debugMode ? '<div>デバッグON: 写真をタップすると座標が出ます</div>' : '';
+    drawFx();
+  });
+  $('galleryBtn').addEventListener('click', ()=>{
+    buildGallery();
+    showScreen(galleryScreen);
+  });
+  $('galleryBackBtn').addEventListener('click', ()=> showScreen(resultScreen));
+  zoomResetBtn.addEventListener('click', resetZoom);
+
+  /* =========================================================
+     写真の読み込み・レイアウト
+  ========================================================= */
+  function loadPhoto(idx){
+    const p = PHOTOS[idx];
+    p.spots.forEach(s => s.found = false);
+    resetZoom();
+    strokeDist = 0; strokeBlocked = false; strokePenalizedOnce = false;
+
+    photoIndexEl.textContent = idx+1;
+    spotTotalEl.textContent = p.spots.length;
+    spotFoundEl.textContent = 0;
+    photoCaption.textContent = `#${idx+1}  ${p.caption}`;
+
+    cleanImg.src = p.clean;
+    ghostImgEl = new Image();
+    ghostImgEl.onload = () => {
+      layoutStage(ghostImgEl.naturalWidth, ghostImgEl.naturalHeight);
+      drawGhostFull();
+      drawFx();
+    };
+    ghostImgEl.src = p.ghost;
+  }
+
+  function layoutStage(natW, natH){
+    const wrapRect = stageWrap.getBoundingClientRect();
+    const maxW = wrapRect.width - 16;
+    const maxH = wrapRect.height - 16;
+    const ratio = natW / natH;
+    let w = maxW, h = maxW / ratio;
+    if(h > maxH){ h = maxH; w = maxH * ratio; }
+
+    stageW = Math.round(w); stageH = Math.round(h);
+    stage.style.width = stageW+'px';
+    stage.style.height = stageH+'px';
+
+    [ghostCanvas, fxCanvas].forEach(c=>{
+      c.width = stageW*dpr; c.height = stageH*dpr;
+      c.style.width = stageW+'px'; c.style.height = stageH+'px';
+    });
+    gctx.setTransform(dpr,0,0,dpr,0,0);
+    fctx.setTransform(dpr,0,0,dpr,0,0);
+
+    strokeLimit = Math.hypot(stageW, stageH) * STROKE_LIMIT_FACTOR;
+  }
+
+  /* =========================================================
+     ズーム / パン(ピンチイン・ピンチアウト)
+  ========================================================= */
+  function applyTransform(){
+    zoomLayer.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+    zoomResetBtn.classList.toggle('show', zoom > 1.02);
+  }
+
+  function clampPan(){
+    const minX = stageW*(1-zoom), maxX = 0;
+    const minY = stageH*(1-zoom), maxY = 0;
+    panX = Math.min(maxX, Math.max(minX, panX));
+    panY = Math.min(maxY, Math.max(minY, panY));
+  }
+
+  function resetZoom(){
+    zoom = 1; panX = 0; panY = 0;
+    applyTransform();
+  }
+
+  function drawGhostFull(){
+    gctx.clearRect(0,0,stageW,stageH);
+    gctx.globalCompositeOperation = 'source-over';
+    gctx.drawImage(ghostImgEl, 0, 0, stageW, stageH);
+  }
+
+  window.addEventListener('resize', ()=>{
+    if(gameScreen.classList.contains('hidden')) return;
+    if(!ghostImgEl.complete) return;
+    // 再レイアウト時は既存の除霊状態を保つため、見つかった箇所は再描画で穴を開け直す
+    layoutStage(ghostImgEl.naturalWidth, ghostImgEl.naturalHeight);
+    drawGhostFull();
+    const p = PHOTOS[curIndex];
+    p.spots.forEach(s=>{ if(s.found) punchHole(s, true); });
+  });
+
+  /* =========================================================
+     除霊エフェクト
+  ========================================================= */
+  function punchHole(spot, instant){
+    const minDim = Math.min(stageW, stageH);
+    const cx = spot.x*stageW, cy = spot.y*stageH;
+    const targetR = spot.r*minDim*1.55;
+
+    if(instant){
+      eraseCircle(cx, cy, targetR);
+      return;
+    }
+    const dur = 420;
+    const t0 = performance.now();
+    function step(t){
+      const p = Math.min(1, (t-t0)/dur);
+      const eased = 1 - Math.pow(1-p, 3);
+      gctx.clearRect(0,0,stageW,stageH); // no-op safeguard (not used, kept for clarity)
+      eraseCircle(cx, cy, targetR*eased);
+      if(p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  }
+
+  function eraseCircle(cx, cy, r){
+    gctx.save();
+    gctx.globalCompositeOperation = 'destination-out';
+    const grad = gctx.createRadialGradient(cx,cy,0,cx,cy,r);
+    grad.addColorStop(0,'rgba(0,0,0,1)');
+    grad.addColorStop(0.72,'rgba(0,0,0,0.95)');
+    grad.addColorStop(1,'rgba(0,0,0,0)');
+    gctx.fillStyle = grad;
+    gctx.beginPath();
+    gctx.arc(cx,cy,r,0,Math.PI*2);
+    gctx.fill();
+    gctx.restore();
+  }
+
+  /* =========================================================
+     指のなぞりエフェクト(演出のみ・判定には使わない)
+  ========================================================= */
+  function drawFx(){
+    fctx.clearRect(0,0,stageW,stageH);
+    const now = performance.now();
+    trail = trail.filter(pt => now-pt.t < 420);
+    trail.forEach(pt=>{
+      const life = 1 - (now-pt.t)/420;
+      fctx.beginPath();
+      fctx.fillStyle = `rgba(180,220,255,${0.25*life})`;
+      fctx.arc(pt.x, pt.y, 14*life+4, 0, Math.PI*2);
+      fctx.fill();
+    });
+
+    if(debugMode){
+      const p = PHOTOS[curIndex];
+      const minDim = Math.min(stageW, stageH);
+      p.spots.forEach(s=>{
+        fctx.beginPath();
+        fctx.strokeStyle = s.found ? 'rgba(120,255,120,.9)' : 'rgba(255,80,80,.9)';
+        fctx.lineWidth = 2;
+        fctx.setLineDash([5,4]);
+        fctx.arc(s.x*stageW, s.y*stageH, s.r*minDim, 0, Math.PI*2);
+        fctx.stroke();
+        fctx.setLineDash([]);
+      });
+    }
+    requestAnimationFrame(drawFx);
+  }
+
+  function checkHit(px, py){
+    const p = PHOTOS[curIndex];
+    const minDim = Math.min(stageW, stageH);
+    let hit = false;
+    p.spots.forEach(s=>{
+      if(s.found) return;
+      const sx = s.x*stageW, sy = s.y*stageH, sr = s.r*minDim;
+      const d = Math.hypot(px-sx, py-sy);
+      if(d <= sr){
+        s.found = true;
+        hit = true;
+        onSpotFound(p, s);
+      }
+    });
+    return hit;
+  }
+
+  function onSpotFound(p, spot){
+    punchHole(spot, false);
+    totalFound++;
+    const foundCount = p.spots.filter(s=>s.found).length;
+    spotFoundEl.textContent = foundCount;
+    totalFoundEl.textContent = totalFound;
+
+    strokeDist = 0; // 発見したらこのストロークの許容量をリフレッシュ
+
+    showToast('除霊…!');
+    if(navigator.vibrate) navigator.vibrate(60);
+
+    if(foundCount === p.spots.length){
+      setTimeout(()=>{
+        clearOverlay.classList.add('show');
+      }, 500);
+    }
+  }
+
+  let toastTimer = null;
+  function showToast(msg, warn){
+    toast.textContent = msg;
+    toast.classList.toggle('warn', !!warn);
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=> toast.classList.remove('show'), 900);
+  }
+
+  function applyPenalty(){
+    penaltyCount++;
+    penaltySeconds += PENALTY_SECONDS_EACH;
+    showToast('なぞりすぎ…集中が途切れた', true);
+    if(navigator.vibrate) navigator.vibrate([25,60,25,60,25]);
+  }
+
+  /* =========================================================
+     タッチ / マウス操作
+     ・指1本  : 幽霊探し(なぞって判定)
+     ・指2本  : ピンチイン/ピンチアウトでズーム、ドラッグでパン
+     ・1回の連続ストロークが画像対角線の約1.6倍を超えてなぞると、
+       そのストロークでは以後の判定を止め、ペナルティを課す
+       (画面をやみくもになぞり続けて正解を探す行為への対策)
+  ========================================================= */
+  const pointers = new Map(); // pointerId -> {x,y} (client座標)
+  let isPinching = false;
+  let pinchStartDist = 1, pinchStartZoom = 1;
+  let pinchAnchor = {x:0, y:0}; // ズーム前のコンテンツ座標(stageローカルpx)
+
+  let singleActive = false;
+  let singlePointerId = null;
+  let lastPos = null;
+  let strokeDist = 0;
+  let strokeBlocked = false;
+  let strokePenalizedOnce = false;
+
+  function distPt(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+  function midPt(a,b){ return {x:(a.x+b.x)/2, y:(a.y+b.y)/2}; }
+
+  function stageLocalFromClient(clientX, clientY){
+    const rect = stage.getBoundingClientRect();
+    return { x: clientX-rect.left, y: clientY-rect.top };
+  }
+  function canvasLocalFromClient(clientX, clientY){
+    const rect = ghostCanvas.getBoundingClientRect();
+    return { x: clientX-rect.left, y: clientY-rect.top };
+  }
+
+  function handlePoint(pos){
+    trail.push({x:pos.x, y:pos.y, t:performance.now()});
+
+    if(debugMode){
+      const nx = (pos.x/stageW).toFixed(3);
+      const ny = (pos.y/stageH).toFixed(3);
+      debugPanel.innerHTML = `<div>x:${nx}  y:${ny}</div>` + debugPanel.innerHTML;
+      const rows = debugPanel.querySelectorAll('div');
+      if(rows.length > 12) rows[rows.length-1].remove();
+    }
+
+    if(strokeBlocked) return;
+    checkHit(pos.x, pos.y);
+  }
+
+  function onPointerDown(e){
+    pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+
+    if(pointers.size === 1){
+      singleActive = true;
+      singlePointerId = e.pointerId;
+      strokeDist = 0; strokeBlocked = false; strokePenalizedOnce = false;
+      const local = canvasLocalFromClient(e.clientX, e.clientY);
+      lastPos = local;
+      handlePoint(local);
+    } else if(pointers.size === 2){
+      singleActive = false;
+      isPinching = true;
+      const pts = [...pointers.values()];
+      pinchStartDist = Math.max(distPt(pts[0], pts[1]), 1);
+      pinchStartZoom = zoom;
+      const midClient = midPt(pts[0], pts[1]);
+      const localMid = stageLocalFromClient(midClient.x, midClient.y);
+      pinchAnchor = { x:(localMid.x-panX)/zoom, y:(localMid.y-panY)/zoom };
+    }
+  }
+
+  function onPointerMove(e){
+    if(!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, {x:e.clientX, y:e.clientY});
+
+    if(isPinching && pointers.size >= 2){
+      const pts = [...pointers.values()].slice(0,2);
+      const newDist = Math.max(distPt(pts[0], pts[1]), 1);
+      const midClient = midPt(pts[0], pts[1]);
+      const localMid = stageLocalFromClient(midClient.x, midClient.y);
+
+      let newZoom = pinchStartZoom * (newDist/pinchStartDist);
+      newZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, newZoom));
+
+      panX = localMid.x - pinchAnchor.x*newZoom;
+      panY = localMid.y - pinchAnchor.y*newZoom;
+      zoom = newZoom;
+      clampPan();
+      applyTransform();
+      return;
+    }
+
+    if(singleActive && e.pointerId === singlePointerId){
+      const local = canvasLocalFromClient(e.clientX, e.clientY);
+      if(lastPos) strokeDist += distPt(lastPos, local);
+      lastPos = local;
+
+      if(!strokeBlocked && strokeDist > strokeLimit){
+        strokeBlocked = true;
+        if(!strokePenalizedOnce){
+          strokePenalizedOnce = true;
+          applyPenalty();
+        }
+      }
+      handlePoint(local);
+    }
+  }
+
+  function onPointerUp(e){
+    pointers.delete(e.pointerId);
+    if(pointers.size < 2) isPinching = false;
+    if(e.pointerId === singlePointerId || pointers.size === 0){
+      singleActive = false; singlePointerId = null; lastPos = null;
+    }
+  }
+
+  ghostCanvas.addEventListener('pointerdown', onPointerDown);
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerUp);
+
+  /* =========================================================
+     結果画面
+  ========================================================= */
+  function finishGame(){
+    const rawElapsed = Math.round((Date.now()-startTime)/1000);
+    const elapsed = rawElapsed + penaltySeconds;
+    $('resFound').textContent = `${totalFound} / ${totalSpots}`;
+    $('resPhotos').textContent = PHOTOS.length;
+    $('resTime').textContent = penaltySeconds > 0
+      ? `${elapsed}秒 (基本${rawElapsed}秒+ペナルティ${penaltySeconds}秒)`
+      : `${elapsed}秒`;
+    $('resPenalty').textContent = `${penaltyCount}回`;
+
+    $('resultRank').textContent =
+      penaltyCount === 0 ? '完全除霊・達人' :
+      penaltyCount <= 2  ? '優秀な霊媒師' :
+      penaltyCount <= 5  ? '見習い霊媒師' : '要修行';
+
+    showScreen(resultScreen);
+  }
+
+  /* =========================================================
+     ギャラリー(特典): 除霊済み写真の幽霊ポイントを赤枠表示
+  ========================================================= */
+  function buildGallery(){
+    galleryGrid.innerHTML = '';
+    PHOTOS.forEach((p, idx)=>{
+      const card = document.createElement('div');
+      card.className = 'galleryCard';
+
+      const wrap = document.createElement('div');
+      wrap.className = 'galleryImgWrap';
+
+      const img = document.createElement('img');
+      img.alt = p.caption;
+      wrap.appendChild(img);
+
+      img.addEventListener('load', ()=>{
+        const nW = img.naturalWidth, nH = img.naturalHeight;
+        const minDim = Math.min(nW, nH);
+        p.spots.forEach(s=>{
+          const frame = document.createElement('div');
+          frame.className = 'galleryFrame';
+          const halfWPct = (s.r*minDim/nW)*100;
+          const halfHPct = (s.r*minDim/nH)*100;
+          frame.style.left = (s.x*100 - halfWPct) + '%';
+          frame.style.top = (s.y*100 - halfHPct) + '%';
+          frame.style.width = (halfWPct*2) + '%';
+          frame.style.height = (halfHPct*2) + '%';
+          wrap.appendChild(frame);
+        });
+      });
+      img.src = p.ghost;
+
+      const foundCount = p.spots.filter(s=>s.found).length;
+      const cap = document.createElement('div');
+      cap.className = 'galleryCap';
+      cap.innerHTML = `#${idx+1} ${p.caption} ・ <b>${foundCount}</b>/${p.spots.length} 体発見`;
+
+      card.appendChild(wrap);
+      card.appendChild(cap);
+      galleryGrid.appendChild(card);
+    });
+  }
+
+})();
+</script>
+</body>
+</html>
