@@ -510,7 +510,6 @@
     function step(t){
       const p = Math.min(1, (t-t0)/dur);
       const eased = 1 - Math.pow(1-p, 3);
-      gctx.clearRect(0,0,stageW,stageH); // no-op safeguard (not used, kept for clarity)
       eraseCircle(cx, cy, targetR*eased);
       if(p < 1) requestAnimationFrame(step);
     }
