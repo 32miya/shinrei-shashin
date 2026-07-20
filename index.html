@@ -535,6 +535,8 @@
   let audioCtx = null;
   let soundOn = true;
   let ambientNodes = null;
+  let whistleTimer = null;
+  let noiseBuffer = null;
   let lastKnockTime = 0;
 
   function ensureAudio(){
@@ -547,34 +549,105 @@
     return audioCtx;
   }
 
+  function getNoiseBuffer(ctx){
+    if(noiseBuffer) return noiseBuffer;
+    const len = ctx.sampleRate * 2;
+    noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate);
+    const data = noiseBuffer.getChannelData(0);
+    for(let i=0;i<len;i++) data[i] = Math.random()*2-1;
+    return noiseBuffer;
+  }
+
+  /* 「ヒュ〜〜…ドロドロドロ…」風の怪談BGM。
+     ・太鼓のロールのような低いノイズのうねり(ドロドロドロ)を常時ループ
+     ・数秒〜十数秒おきに、下降する笛のような音(ヒュ〜)をランダムに重ねる */
   function startAmbient(){
     if(!soundOn) return;
     const ctx = ensureAudio();
     if(!ctx) return;
     stopAmbient();
 
+    // ドロドロドロ…(太鼓ロール風のノイズのうねり)
+    const noiseSrc = ctx.createBufferSource();
+    noiseSrc.buffer = getNoiseBuffer(ctx);
+    noiseSrc.loop = true;
+
+    const lowpass = ctx.createBiquadFilter();
+    lowpass.type = 'lowpass';
+    lowpass.frequency.value = 200;
+
+    const rollGain = ctx.createGain();
+    rollGain.gain.value = 0.05;
+
+    const tremolo = ctx.createOscillator();
+    tremolo.type = 'sine';
+    tremolo.frequency.value = 13; // ロールの速さ
+    const tremoloGain = ctx.createGain();
+    tremoloGain.gain.value = 0.04;
+    tremolo.connect(tremoloGain).connect(rollGain.gain);
+    tremolo.start();
+
+    noiseSrc.connect(lowpass).connect(rollGain).connect(ctx.destination);
+    noiseSrc.start();
+
+    // 下敷きの低いドローン
     const osc = ctx.createOscillator();
     osc.type = 'sine';
-    osc.frequency.value = 52;
-    const gain = ctx.createGain();
-    gain.gain.value = 0.018;
-    osc.connect(gain).connect(ctx.destination);
+    osc.frequency.value = 48;
+    const droneGain = ctx.createGain();
+    droneGain.gain.value = 0.014;
+    osc.connect(droneGain).connect(ctx.destination);
     osc.start();
 
-    const lfo = ctx.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.06;
-    const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 0.012;
-    lfo.connect(lfoGain).connect(gain.gain);
-    lfo.start();
+    ambientNodes = {noiseSrc, lowpass, rollGain, tremolo, tremoloGain, osc, droneGain};
+    scheduleWhistle();
+  }
 
-    ambientNodes = {osc, gain, lfo};
+  function scheduleWhistle(){
+    clearTimeout(whistleTimer);
+    const delay = 8000 + Math.random()*10000; // 8〜18秒おきにランダム
+    whistleTimer = setTimeout(()=>{
+      playWhistle();
+      scheduleWhistle();
+    }, delay);
+  }
+
+  function playWhistle(){
+    if(!soundOn || !audioCtx) return;
+    const ctx = audioCtx;
+    const now = ctx.currentTime;
+
+    // ヒュ〜〜…(高音から低音へ滑り落ちる笛の音)
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1000, now);
+    osc.frequency.exponentialRampToValueAtTime(200, now+1.6);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.10, now+0.2);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now+1.8);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now+1.9);
+
+    // ヒュ〜に続いて一瞬ドロドロを強める
+    if(ambientNodes){
+      const rg = ambientNodes.rollGain.gain;
+      rg.cancelScheduledValues(now);
+      rg.setValueAtTime(rg.value, now+0.4);
+      rg.linearRampToValueAtTime(0.11, now+0.7);
+      rg.linearRampToValueAtTime(0.05, now+2.2);
+    }
   }
 
   function stopAmbient(){
+    clearTimeout(whistleTimer);
     if(ambientNodes){
-      try{ ambientNodes.osc.stop(); ambientNodes.lfo.stop(); }catch(e){}
+      try{
+        ambientNodes.noiseSrc.stop();
+        ambientNodes.tremolo.stop();
+        ambientNodes.osc.stop();
+      }catch(e){}
       ambientNodes = null;
     }
   }
@@ -760,7 +833,9 @@
   function punchHole(spot, instant){
     const minDim = Math.min(stageW, stageH);
     const cx = spot.x*stageW, cy = spot.y*stageH;
-    const targetR = spot.r*minDim*1.55;
+    // clearR を個別に指定すれば消去範囲だけを調整できる(当たり判定のrはそのまま)
+    const clearRNorm = spot.clearR != null ? spot.clearR : spot.r*2.3;
+    const targetR = clearRNorm*minDim;
 
     if(instant){
       eraseCircle(cx, cy, targetR);
